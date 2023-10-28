@@ -446,21 +446,26 @@ class StableDiffusionClient(http_client.SerializedHttpClient):
                 "Stable Diffusion: Image Progress request",
             )
             start_time = time.time()
-
-            async with self._get_session().get(
-                self.API_COMMAND_URLS["progress"],
-            ) as response:
-                if response.status != 200:
-                    raise http_client.OobaHttpClientError(response)
-                duration = time.time() - start_time
-                json_body = await response.json()
-                image_bytes = base64.b64decode(json_body["current_image"] or b"")
-                fancy_logger.get().debug(
-                    "Stable Diffusion: Image Progress received, %d bytes in %.2f seconds",
-                    len(image_bytes),
-                    duration,
+            try:
+                async with self._get_session().get(
+                    self.API_COMMAND_URLS["progress"],
+                ) as response:
+                    if response.status != 200:
+                        raise http_client.OobaHttpClientError(response)
+                    duration = time.time() - start_time
+                    json_body = await response.json()
+                    image_bytes = base64.b64decode(json_body["current_image"] or b"")
+                    fancy_logger.get().debug(
+                        "Stable Diffusion: Image Progress received, %d bytes in %.2f seconds",
+                        len(image_bytes),
+                        duration,
+                    )
+                    return image_bytes
+            except (aiohttp.ClientError, aiohttp.ClientOSError) as err:
+                fancy_logger.get().warning(
+                    "Stable Diffusion: Connection error: %s", err
                 )
-                return image_bytes
+                raise
 
         return asyncio.create_task(do_get())
 

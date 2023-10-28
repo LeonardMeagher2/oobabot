@@ -15,7 +15,7 @@ persona:
 
   # Name the AI will use to refer to itself
   #   default: oobabot
-  ai_name:
+  ai_name: Eight
 
   # This prefix will be added in front of every user-supplied request.  This is useful for
   # setting up a 'character' for the bot to play.  Alternatively, this can be set with the
@@ -28,14 +28,14 @@ persona:
   # be overwritten with the values in the file.  Also, the wakewords will be extended to
   # include the character's own name.
   #   default:
-  persona_file:
+  persona_file: Eight.yaml
 
   # One or more words that the bot will listen for. The bot will listen in all discord
   # channels it can access for one of these words to be mentioned, then reply to any
   # messages it sees with a matching word. The bot will always reply to @-mentions and
   # direct messages, even if no wakewords are supplied.
   #   default: ['oobabot']
-  wakewords:
+  wakewords: ['eight', 'psps']
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # discord
@@ -49,15 +49,15 @@ discord:
   # Post the entire response as a single message, rather than splitting it into separate
   # messages by sentence.
   #   default: False
-  dont_split_responses:
+  dont_split_responses: True
 
   # Number of lines of chat history the AI will see when generating a response.
   #   default: 7
-  history_lines:
+  history_lines: 14
 
   # If set, the bot will not respond to direct messages.
   #   default: False
-  ignore_dms:
+  ignore_dms: True
 
   # Set the log level.  Valid values are:
   # CRITICAL, ERROR, WARNING, INFO, DEBUG
@@ -85,7 +85,7 @@ discord:
   # messages, and if you exceed it, the updates will suddenly become slow.  Example: 0.2
   # means we will send updates no faster than 5 times per second.
   #   default: 0.7
-  stream_responses_speed_limit:
+  stream_responses_speed_limit: 0.7
 
   # Adds a limit to the number of channels the bot will post unsolicited messages in at the
   # same time.  This is to prevent the bot from being too noisy in large servers.  When set,
@@ -123,7 +123,7 @@ oobabooga:
 
   # Print all AI input and output to STDOUT.
   #   default: False
-  log_all_the_things:
+  log_all_the_things: True
 
   # A regex that will be used to extract message lines from the AI's output.  The first
   # capture group will be used as the message.  If this is not set, the entire output will
@@ -174,11 +174,11 @@ stable_diffusion:
 
   # When one of these words is used in a message, the bot will generate an image.
   #   default: ['draw me', 'drawing', 'photo', 'pic', 'picture', 'image', 'sketch']
-  image_words:
+  image_words: ['draw me', 'sketch', 'generate a', 'generate an']
 
   # URL for an AUTOMATIC1111 Stable Diffusion server.
   #   default:
-  stable_diffusion_url:
+  stable_diffusion_url: http://127.0.0.1:7860
 
   # This will be appended to every image generation prompt sent to Stable Diffusion.
   #   default:
@@ -191,23 +191,22 @@ stable_diffusion:
     cfg_scale: 7
     do_not_save_samples: true
     do_not_save_grid: true
-    enable_hr: false
-    model: ''
-    negative_prompt: animal harm, suicide, loli, nsfw
-    negative_prompt_nsfw: animal harm, suicide, loli
-    sampler_name: ''
+    model: 'absolutereality_v181'
+    negative_prompt: ''
+    negative_prompt_nsfw: ''
+    sampler_name: 'DPM++ 2M SDE Heun Karras'
     seed: -1
     steps: 30
     width: 512
     height: 512
 
-  request_param_ranges:
+  request_params_ranges:
     cfg_scale:
-      min: 0
-      max: 30
+      min: 1
+      max: 10
     steps:
       min: 1
-      max: 150
+      max: 60
 
   # These parameters can be overridden by the Discord user by including them in their image
   # generation request.  The format for this is: param_name=value  This is a whitelist of
@@ -220,13 +219,10 @@ stable_diffusion:
   # example, steps=1000000 could be bad for your server.
   user_override_params:
     - cfg_scale
-    - enable_hr
     - model
     - negative_prompt
-    - sampler_name
     - seed
-    - height
-    - width
+    - steps
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # template
@@ -239,7 +235,7 @@ template:
   # Allowed tokens: {AI_NAME}, {USER_NAME}
   # .
   #   default:  Ummmm... what were we talking about?
-  command_lobotomize_response:
+  command_lobotomize_response: Mew?
 
   # The main prompt sent to Oobabooga to generate a response from the bot AI.  The AI's
   # reply to this prompt will be sent to discord as the bot's response.

@@ -69,6 +69,7 @@ class StableDiffusionClient(http_client.SerializedHttpClient):
         #   },
         # ...
         # ]
+        "progress": STABLE_DIFFUSION_API_URI_PATH + "progress",
     }
 
     def __init__(
@@ -86,6 +87,10 @@ class StableDiffusionClient(http_client.SerializedHttpClient):
         self.sd_models = []
         self.sd_samplers = []
 
+        # these are the ranges for the "request_params" values, only if the type is a number
+        # {key: {min, max}}
+        self.request_params_ranges = settings["request_params_ranges"]
+
         self.user_override_params = {}
         # ensure that each customizable param is in the request_params
         for param in settings["user_override_params"]:
@@ -98,7 +103,17 @@ class StableDiffusionClient(http_client.SerializedHttpClient):
                 )
                 continue
             # store the type of the param, so we can validate user input later
-            self.user_override_params[param] = type(self.request_params[param])
+            param_type = type(self.request_params[param])
+            self.user_override_params[param] = param_type
+
+            # if the type is not a number but in the ranges, remove it
+            if param_type != int and param_type != float:
+                self.request_params_ranges.pop(param, None)
+                fancy_logger.get().debug(
+                    "Stable Diffusion:  customizable param '%s' is not a number, "
+                    + "removing from request_params_ranges.",
+                    param,
+                )
 
         self.magic_model_key = magic_model_key.lower()
 
@@ -324,6 +339,13 @@ class StableDiffusionClient(http_client.SerializedHttpClient):
             fancy_logger.get().debug(
                 "Stable Diffusion: per user request, setting '%s' to '%s'", key, val
             )
+
+            # if the key is in the ranges, clamp the value
+            if key in self.request_params_ranges:
+                min_val = self.request_params_ranges[key]["min"]
+                max_val = self.request_params_ranges[key]["max"]
+                val = max(min(val, max_val), min_val)
+
             params[key] = val
 
         self.update_model_and_sampler(params)
@@ -409,6 +431,38 @@ class StableDiffusionClient(http_client.SerializedHttpClient):
                     tries += 1
 
         return asyncio.create_task(do_post_with_retry())
+
+    def get_progress(self) -> "asyncio.Task[bytes]":
+        """
+        Get the progress of the current image generation.
+        Returns:
+            The progress as a dict.
+        Raises:
+            OobaHttpClientError, if the request fails.
+        """
+
+        async def do_get() -> bytes:
+            fancy_logger.get().debug(
+                "Stable Diffusion: Image Progress request",
+            )
+            start_time = time.time()
+
+            async with self._get_session().get(
+                self.API_COMMAND_URLS["progress"],
+            ) as response:
+                if response.status != 200:
+                    raise http_client.OobaHttpClientError(response)
+                duration = time.time() - start_time
+                json_body = await response.json()
+                image_bytes = base64.b64decode(json_body["current_image"] or b"")
+                fancy_logger.get().debug(
+                    "Stable Diffusion: Image Progress received, %d bytes in %.2f seconds",
+                    len(image_bytes),
+                    duration,
+                )
+                return image_bytes
+
+        return asyncio.create_task(do_get())
 
     async def _setup(self):
         await self.set_options()

@@ -7,6 +7,7 @@ import asyncio
 import io
 import re
 import typing
+import base64
 
 import discord
 
@@ -17,13 +18,28 @@ from oobabot import prompt_generator
 from oobabot import sd_client
 from oobabot import templates
 
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a filename so that it can be used in a Discord attachment.
+    """
+    # remove any characters that aren't alphanumeric, underscore, or period
+    filename = re.sub(r"[^\w\-_\. ]", "_", filename)
+    # remove any double underscores or periods
+    filename = re.sub(r"([\-\._ ]){2,}", r"\1", filename)
+    # remove leading and trailing underscores or periods
+    filename = filename.lstrip("-._ ")
+    filename = filename.rstrip("-._ ")
+
+    return filename
 
 async def image_task_to_file(image_task: "asyncio.Task[bytes]", image_request: str):
     await image_task
     img_bytes = image_task.result()
+    if img_bytes is None or len(img_bytes) == 0:
+        return None
     file_of_bytes = io.BytesIO(img_bytes)
     file = discord.File(file_of_bytes)
-    file.filename = "photo.png"
+    file.filename = sanitize_filename(image_request) + ".png"
     file.description = f"image generated from '{image_request}'"
     return file
 
@@ -36,7 +52,7 @@ class StableDiffusionImageView(discord.ui.View):
     """
 
     LABEL_ACCEPT = "Accept"
-    LABEL_DELETE = "Delete"
+    LABEL_EDIT_PROMPT = "Edit Prompt"
 
     # these two phrases (along with exactly two periods)
     # in "Drawing.." were chosen because they render at
@@ -57,6 +73,7 @@ class StableDiffusionImageView(discord.ui.View):
     ):
         super().__init__(timeout=120.0)
 
+        self.in_progress = True
         self.template_store = template_store
 
         # only the user who requested generation of the image
@@ -72,9 +89,67 @@ class StableDiffusionImageView(discord.ui.View):
         btn_try_again = discord.ui.Button(
             label=self.LABEL_TRY_AGAIN,
             style=discord.ButtonStyle.blurple,
-            row=1,
+            row=2,
         )
         self.image_message = None
+
+        async def run():
+            self.in_progress = True
+
+            btn_try_again.label = self.LABEL_DRAWING
+
+            # we disable all three buttons because otherwise
+            # the lock_in button will flicker
+            # when we disable the try_again button.  And it
+            # doesn't make much sense for them to work anyway
+            # when the button is being regenerated.
+            btn_try_again.disabled = True
+            btn_lock_in.disabled = True
+            
+
+            await self.get_image_message().edit(view=self)
+
+            # generate a new image
+            regen_task = stable_diffusion_client.generate_image(
+                image_prompt, is_channel_nsfw
+            )
+
+            last_bytes = None
+            while not regen_task.done():
+                try:    
+                    progress_task = stable_diffusion_client.get_progress()
+                    progress_bytes = await progress_task
+                    progress_file = await image_task_to_file(progress_task, image_prompt)
+                    if progress_file:
+                        if last_bytes and last_bytes == progress_bytes:
+                            # if the progress file hasn't changed, don't bother updating
+                            await asyncio.sleep(0.1)
+                            continue
+                    
+                        last_bytes = progress_bytes
+                        await self.get_image_message().edit(
+                            content=self.get_image_message_text(),
+                            attachments=[progress_file],
+                            view=self
+                        )
+                except (http_client.OobaHttpClientError, discord.DiscordException) as err:
+                    fancy_logger.get().error("Could not get progress file", err, exc_info=True)
+                await asyncio.sleep(0.1)
+
+            regen_file = await image_task_to_file(regen_task, image_prompt)
+            
+            self.in_progress = False
+            btn_try_again.label = self.LABEL_TRY_AGAIN
+            btn_try_again.disabled = False
+            btn_lock_in.disabled = False
+
+            await self.get_image_message().edit(
+                content=self.get_image_message_text(),
+                attachments=[regen_file],
+                view=self
+            )
+
+        self.run = run
 
         async def on_try_again(interaction: discord.Interaction):
             result = await self.diy_interaction_check(interaction)
@@ -83,32 +158,8 @@ class StableDiffusionImageView(discord.ui.View):
                 return
 
             try:
-                btn_try_again.label = self.LABEL_DRAWING
-
-                # we disable all three buttons because otherwise
-                # the lock_in and delete buttons will flicker
-                # when we disable the try_again button.  And it
-                # doesn't make much sense for them to work anyway
-                # when the button is being regenerated.
-                btn_try_again.disabled = True
-                btn_lock_in.disabled = True
-                btn_delete.disabled = True
-
                 await interaction.response.defer()
-                await self.get_image_message().edit(view=self)
-
-                # generate a new image
-                regen_task = stable_diffusion_client.generate_image(
-                    image_prompt, is_channel_nsfw
-                )
-                regen_file = await image_task_to_file(regen_task, image_prompt)
-
-                btn_try_again.label = self.LABEL_TRY_AGAIN
-                btn_try_again.disabled = False
-                btn_lock_in.disabled = False
-                btn_delete.disabled = False
-
-                await self.get_image_message().edit(attachments=[regen_file], view=self)
+                await run()
             except (http_client.OobaHttpClientError, discord.DiscordException) as err:
                 fancy_logger.get().error(
                     "Could not regenerate image: %s", err, exc_info=True
@@ -122,7 +173,7 @@ class StableDiffusionImageView(discord.ui.View):
         btn_lock_in = discord.ui.Button(
             label=self.LABEL_ACCEPT,
             style=discord.ButtonStyle.success,
-            row=1,
+            row=2,
         )
 
         async def on_lock_in(interaction: discord.Interaction):
@@ -135,26 +186,7 @@ class StableDiffusionImageView(discord.ui.View):
 
         btn_lock_in.callback = on_lock_in
 
-        #####################################################
-        # "Delete" button
-        #
-        btn_delete = discord.ui.Button(
-            label=self.LABEL_DELETE,
-            style=discord.ButtonStyle.danger,
-            row=1,
-        )
-
-        async def on_delete(interaction: discord.Interaction):
-            result = await self.diy_interaction_check(interaction)
-            if not result:
-                # unauthorized user
-                return
-            await interaction.response.defer()
-            await self.delete_image()
-
-        btn_delete.callback = on_delete
-
-        super().add_item(btn_try_again).add_item(btn_lock_in).add_item(btn_delete)
+        super().add_item(btn_try_again).add_item(btn_lock_in)
 
     def set_image_message(self, image_message: discord.Message):
         self.image_message = image_message
@@ -163,16 +195,6 @@ class StableDiffusionImageView(discord.ui.View):
         if self.image_message is None:
             raise ValueError("image_message is None")
         return self.image_message
-
-    async def delete_image(self):
-        await self.detach_view_delete_img(self.get_detach_message())
-
-    async def detach_view_delete_img(self, detach_msg: str):
-        await self.get_image_message().edit(
-            content=detach_msg,
-            view=None,
-            attachments=[],
-        )
 
     async def detach_view_keep_img(self):
         self.photo_accepted = True
@@ -183,7 +205,7 @@ class StableDiffusionImageView(discord.ui.View):
 
     async def on_timeout(self):
         if not self.photo_accepted:
-            await self.delete_image()
+            await self.detach_view_keep_img()
 
     async def diy_interaction_check(self, interaction: discord.Interaction) -> bool:
         """
@@ -199,6 +221,8 @@ class StableDiffusionImageView(discord.ui.View):
         return False
 
     def get_image_message_text(self) -> str:
+        if self.in_progress:
+            return self._get_message(templates.Templates.IMAGE_PROGRESS)
         return self._get_message(templates.Templates.IMAGE_CONFIRMATION)
 
     def get_detach_message(self) -> str:
@@ -270,22 +294,6 @@ class ImageGenerator:
         if isinstance(raw_message.channel, discord.TextChannel):
             is_channel_nsfw = raw_message.channel.is_nsfw()
 
-        image_task = self.stable_diffusion_client.generate_image(
-            image_prompt, is_channel_nsfw=is_channel_nsfw
-        )
-        try:
-            file = await image_task_to_file(image_task, image_prompt)
-        except (http_client.OobaHttpClientError, discord.DiscordException) as err:
-            fancy_logger.get().error("Could not generate image: %s", err, exc_info=True)
-            error_message = self.template_store.format(
-                templates.Templates.IMAGE_GENERATION_ERROR,
-                {
-                    templates.TemplateToken.USER_NAME: raw_message.author.display_name,
-                    templates.TemplateToken.IMAGE_PROMPT: image_prompt,
-                },
-            )
-            return await response_channel.send(error_message, reference=raw_message)
-
         regen_view = StableDiffusionImageView(
             self.stable_diffusion_client,
             is_channel_nsfw=is_channel_nsfw,
@@ -304,11 +312,13 @@ class ImageGenerator:
 
         image_message = await response_channel.send(
             content=regen_view.get_image_message_text(),
-            file=file,
             view=regen_view,
             **kwargs,
         )
         regen_view.image_message = image_message
+
+        await regen_view.run()
+
         return image_message
 
     def maybe_get_image_prompt(

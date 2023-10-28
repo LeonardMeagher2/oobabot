@@ -20,6 +20,7 @@ class Templates(enum.Enum):
     COMMAND_LOBOTOMIZE_RESPONSE = "command_lobotomize_response"
 
     IMAGE_DETACH = "image_detach"
+    IMAGE_PROGRESS = "image_progress"
     IMAGE_CONFIRMATION = "image_confirmation"
     IMAGE_GENERATION_ERROR = "image_generation_error"
     IMAGE_UNAUTHORIZED = "image_unauthorized"
@@ -115,6 +116,14 @@ class TemplateStore:
             + "that Stable Diffusion had generated.",
             False,
         ),
+        Templates.IMAGE_PROGRESS: (
+            [
+                TemplateToken.IMAGE_PROMPT,
+                TemplateToken.USER_NAME,
+            ],
+            "Shown in Discord when the generation of an image is in progress.  ",
+            False,
+        ),
         Templates.IMAGE_CONFIRMATION: (
             [
                 TemplateToken.IMAGE_PROMPT,
@@ -169,7 +178,8 @@ class TemplateStore:
         ),
         Templates.PROMPT_IMAGE_COMING: textwrap.dedent(
             """
-            {AI_NAME}: is currently generating an image, as requested.
+            {AI_NAME} is currently generating an image of the requested prompt.
+            {AI_NAME} will respond without attempting to give links to images.
             """
         ),
         Templates.IMAGE_DETACH: textwrap.dedent(
@@ -179,10 +189,14 @@ class TemplateStore:
             ...but couldn't find a suitable one.
             """
         ),
+        Templates.IMAGE_PROGRESS: textwrap.dedent(
+            """
+            Generating image...
+            """
+        ),
         Templates.IMAGE_CONFIRMATION: textwrap.dedent(
             """
             {USER_NAME}, is this what you wanted?
-            If no choice is made, this message will 💣 self-destruct 💣 in 3 minutes.
             """
         ),
         Templates.IMAGE_GENERATION_ERROR: textwrap.dedent(

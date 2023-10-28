@@ -201,17 +201,16 @@ class DiscordBot(discord.Client):
             # are we creating an image?
             image_prompt = self.image_generator.maybe_get_image_prompt(raw_message)
 
-        result = await self._send_text_response(
-            message=message,
-            raw_message=raw_message,
-            image_requested=image_prompt is not None,
-            is_summon_in_public_channel=is_summon_in_public_channel,
+        # create a channel to send the response in
+        response_channel = await self._create_response_channel(
+            raw_message,
+            is_summon_in_public_channel,
         )
-        if result is None:
+
+        if response_channel is None:
             # we failed to create a thread that the user could
             # read our response in, so we're done here.  Abort!
             return
-        message_task, response_channel = result
 
         # log the mention, now that we know the channel we
         # want to monitor later to continue to conversation
@@ -230,6 +229,17 @@ class DiscordBot(discord.Client):
                 response_channel=response_channel,
             )
 
+        if image_task is not None:
+            await asyncio.wait([image_task])
+
+        message_task = await self._send_text_response(
+            message=message,
+            raw_message=raw_message,
+            response_channel=response_channel,
+            image_requested=image_prompt is not None,
+            is_summon_in_public_channel=is_summon_in_public_channel,
+        )
+        
         response_tasks = [
             task for task in [message_task, image_task] if task is not None
         ]
@@ -249,25 +259,11 @@ class DiscordBot(discord.Client):
         if raise_later is not None:
             raise raise_later
 
-    async def _send_text_response(
+    async def _create_response_channel(
         self,
-        message: types.GenericMessage,
         raw_message: discord.Message,
-        image_requested: bool,
         is_summon_in_public_channel: bool,
-    ) -> typing.Optional[typing.Tuple[asyncio.Task, discord.abc.Messageable]]:
-        """
-        Send a text response to a message.
-
-        This method determines what channel or thread to post the message
-        in, creating a thread if necessary.  It then posts the message
-        by calling _send_text_response_to_channel().
-
-        Returns a tuple of the task that was created to send the message,
-        and the channel that the message was sent to.
-
-        If no message was sent, the task and channel will be None.
-        """
+    ) -> discord.abc.Messageable:
         response_channel = raw_message.channel
         if (
             self.reply_in_thread
@@ -299,6 +295,29 @@ class DiscordBot(discord.Client):
                 fancy_logger.get().debug("User can't create threads, not responding.")
                 return None
 
+        return response_channel
+
+    async def _send_text_response(
+        self,
+        message: types.GenericMessage,
+        raw_message: discord.Message,
+        response_channel: discord.abc.Messageable,
+        image_requested: bool,
+        is_summon_in_public_channel: bool,
+    ) -> asyncio.Task:
+        """
+        Send a text response to a message.
+
+        This method determines what channel or thread to post the message
+        in, creating a thread if necessary. It then posts the message
+        by calling _send_text_response_to_channel().
+
+        Returns a tuple of the task that was created to send the message,
+        and the channel that the message was sent to.
+
+        If no message was sent, the task and channel will be None.
+        """
+
         response_coro = self._send_text_response_in_channel(
             message=message,
             raw_message=raw_message,
@@ -308,7 +327,7 @@ class DiscordBot(discord.Client):
             response_channel_id=response_channel.id,
         )
         response_task = asyncio.create_task(response_coro)
-        return (response_task, response_channel)
+        return response_task
 
     async def _send_text_response_in_channel(
         self,

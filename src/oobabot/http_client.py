@@ -77,7 +77,7 @@ class SerializedHttpClient(abc.ABC):
         return self._session
 
     async def __aenter__(self):
-        connector = aiohttp.TCPConnector(limit_per_host=1)
+        connector = aiohttp.TCPConnector(limit_per_host=3)
         self._session = aiohttp.ClientSession(
             base_url=self.base_url,
             connector=connector,

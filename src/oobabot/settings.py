@@ -157,6 +157,11 @@ class Settings:
         "height": 512,
     }
 
+    DEFAULT_SD_REQUEST_PARAMS_RANGES: oesp.SettingDictType = {
+        "cfg_scale": {"min": 0, "max": 30},
+        "steps": {"min": 1, "max": 150},
+    }
+
     DEFAULT_SD_USER_OVERRIDE_PARAMS = [
         "cfg_scale",
         "enable_hr",
@@ -704,6 +709,29 @@ class Settings:
                 place_default_in_yaml=True,
             )
         )
+
+        self.stable_diffusion_settings.add_setting(
+            oesp.ConfigSetting[oesp.SettingDictType](
+                name="request_params_ranges",
+                default=self.DEFAULT_SD_REQUEST_PARAMS_RANGES,
+                description_lines=[
+                    textwrap.dedent(
+                        """
+                        A dictionary of dictionaries which will be used to
+                        validate the request_params dictionary.  Each key
+                        in the request_params dictionary will be checked
+                        against the corresponding dictionary in this one.
+                        If the value is outside the range, it will be
+                        clamped to the nearest value in the range.
+                        """
+                    )
+                ],
+                include_in_argparse=False,
+                show_default_in_yaml=False,
+                place_default_in_yaml=True,
+            )
+        )
+
         self.stable_diffusion_settings.add_setting(
             oesp.ConfigSetting[list](
                 name="user_override_params",

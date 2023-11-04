@@ -264,6 +264,8 @@ class OobaClient(http_client.SerializedHttpClient):
                     # get_logger().debug(f"Received data: {bdata}")
 
                     incoming_data = msg.json()
+                    
+
                     if "text_stream" == incoming_data["event"]:
                         self.total_response_tokens += 1
                         text = incoming_data["text"]

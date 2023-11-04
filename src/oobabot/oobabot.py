@@ -10,6 +10,7 @@ import signal
 import sys
 import threading
 import typing
+import time
 
 import oobabot
 from oobabot import discord_utils
@@ -90,12 +91,15 @@ class Oobabot:
         )
 
         with self.runtime_lock:
-            self.runtime = runtime.Runtime(self.settings)
-            test_passed = self.runtime.test_connections()
-            if not test_passed:
-                # test_connections will have logged the error
-                self.runtime = None
-                return
+            tries = 0
+            test_runtime = runtime.Runtime(self.settings)
+            while tries < 30:
+                tries += 1
+                test_passed = test_runtime.test_connections()
+                if test_passed:
+                    self.runtime = test_runtime
+                    break
+                time.sleep(0.5)
 
         asyncio.run(self.runtime.run())
 

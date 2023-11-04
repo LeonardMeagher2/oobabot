@@ -388,10 +388,6 @@ class DiscordBot(discord.Client):
             roles=False,
         )
 
-        # will be set to true when we abort the response because:
-        #  it was empty
-        #  it repeated a previous response and we're throttling it
-        aborted_by_us = False
         sent_message_count = 0
         try:
             if self.stream_responses:
@@ -411,10 +407,8 @@ class DiscordBot(discord.Client):
             else:
                 if self.dont_split_responses:
                     response = await self.ooba_client.request_as_string(prompt_prefix)
-                    (
-                        last_sent_message,
-                        aborted_by_us,
-                    ) = await self._send_response_message(
+                    
+                    last_sent_message = await self._send_response_message(
                         response,
                         this_response_stat,
                         response_channel,
@@ -430,10 +424,7 @@ class DiscordBot(discord.Client):
                     async for sentence in self.ooba_client.request_by_message(
                         prompt_prefix
                     ):
-                        (
-                            sent_message,
-                            abort_response,
-                        ) = await self._send_response_message(
+                        sent_message = await self._send_response_message(
                             sentence,
                             this_response_stat,
                             response_channel,
@@ -447,9 +438,6 @@ class DiscordBot(discord.Client):
                             # only use the reference for the first
                             # message in a multi-message chain
                             reference = None
-                        if abort_response:
-                            aborted_by_us = True
-                            break
 
         except discord.DiscordException as err:
             fancy_logger.get().error("Error: %s", err, exc_info=True)
@@ -457,17 +445,11 @@ class DiscordBot(discord.Client):
             return
 
         if 0 == sent_message_count:
-            if aborted_by_us:
-                fancy_logger.get().warning(
-                    "No response sent.  The AI has generated a message that we have "
-                    + "chosen not to send, probably because it was empty or repeated."
-                )
-            else:
-                fancy_logger.get().warning(
-                    "An empty response was received from Oobabooga.  Please check that "
-                    + "the AI is running properly on the Oobabooga server at %s.",
-                    self.ooba_client.base_url,
-                )
+            fancy_logger.get().warning(
+                "An empty response was received from Oobabooga.  Please check that "
+                + "the AI is running properly on the Oobabooga server at %s.",
+                self.ooba_client.base_url,
+            )
             self.response_stats.log_response_failure()
             return
 
@@ -494,16 +476,12 @@ class DiscordBot(discord.Client):
         Also does some bookkeeping to make sure we don't repeat ourselves,
         and to track how many messages we've sent.
 
-        Returns a tuple with:
-        - the sent discord message, if any
-        - a boolean indicating if we need to abort the response entirely
+        Returns the sent discord message, if any
         """
-        (sentence, abort_response) = self._filter_immersion_breaking_lines(response)
-        if abort_response:
-            return (None, True)
+        sentence = self._filter_immersion_breaking_lines(response)
         if not sentence:
             # we can't send an empty message
-            return (None, False)
+            return None
 
         response_message = await response_channel.send(
             sentence,
@@ -517,7 +495,7 @@ class DiscordBot(discord.Client):
         )
 
         this_response_stat.log_response_part()
-        return (response_message, False)
+        return response_message
 
     async def _render_streaming_response(
         self,
@@ -535,10 +513,7 @@ class DiscordBot(discord.Client):
                 continue
 
             response += token
-            (response, abort_response) = self._filter_immersion_breaking_lines(response)
-
-            # if we are aborting a response, we want to at least post
-            # the valid parts, so don't abort quite yet.
+            response = self._filter_immersion_breaking_lines(response)
 
             if last_message is None:
                 if not response:
@@ -563,12 +538,6 @@ class DiscordBot(discord.Client):
                 )
                 last_message.content = response
 
-            # we want to abort the response only after we've sent any valid
-            # messages, and potentially removed any partial immersion-breaking
-            # lines that we posted when they were in the process of being received.
-            if abort_response:
-                break
-
             this_response_stat.log_response_part()
 
         if last_message is not None:
@@ -590,30 +559,26 @@ class DiscordBot(discord.Client):
         that attempt to carry on the conversation as a different user,
         and lines that include text which is part of the AI prompt.
 
-        Returns the subset of the input string that should be sent,
-        and a boolean indicating if we should abort the response entirely,
-        ignoring any further lines.
+        Returns the subset of the input string that should be sent
         """
         lines = sentence.split("\n")
         good_lines = []
         previous_line = ""
-        abort_response = False
         for line in lines:
             # if the AI gives itself a second line, just ignore
             # the line instruction and continue
             if self.prompt_generator.bot_prompt_line == line:
                 fancy_logger.get().warning(
-                    "Filtered out %s from response, continuing", line
+                    "Filtered out %s from response", line
                 )
                 continue
 
-            # hack: abort response if it looks like the AI is
+            # hack: stop response if it looks like the AI is
             # continuing the conversation as someone else
             if line.endswith(" says:"):
                 fancy_logger.get().warning(
-                    'Filtered out "%s" from response, aborting', line
+                    'Filtered out "%s" from response', line
                 )
-                abort_response = True
                 break
 
             # look for partial stop markers within a line
@@ -621,12 +586,11 @@ class DiscordBot(discord.Client):
                 if marker in line:
                     (keep_part, removed) = line.split(marker, 1)
                     fancy_logger.get().warning(
-                        'Filtered out "%s" from response, aborting',
+                        'Filtered out "%s" from response',
                         removed,
                     )
                     if keep_part:
                         good_lines.append(keep_part)
-                    abort_response = True
                     break
 
             if not line and not previous_line:
@@ -638,7 +602,7 @@ class DiscordBot(discord.Client):
                 continue
 
             good_lines.append(line)
-        return ("\n".join(good_lines), abort_response)
+        return "\n".join(good_lines)
 
     ########
     async def _filter_history_message(

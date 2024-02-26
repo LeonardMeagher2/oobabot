@@ -565,13 +565,6 @@ class DiscordBot(discord.Client):
         good_lines = []
         previous_line = ""
         for line in lines:
-            # if the AI gives itself a second line, just ignore
-            # the line instruction and continue
-            if self.prompt_generator.bot_prompt_line == line:
-                fancy_logger.get().warning(
-                    "Filtered out %s from response", line
-                )
-                continue
 
             # hack: stop response if it looks like the AI is
             # continuing the conversation as someone else

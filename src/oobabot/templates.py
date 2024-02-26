@@ -50,6 +50,7 @@ class TemplateToken(str, enum.Enum):
     MESSAGE_HISTORY = "MESSAGE_HISTORY"
     USER_MESSAGE = "USER_MESSAGE"
     USER_NAME = "USER_NAME"
+    TIME = "TIME"
 
     def __str__(self):
         return "{" + self.value + "}"
@@ -89,6 +90,7 @@ class TemplateStore:
         ),
         Templates.PROMPT_HISTORY_LINE: (
             [
+                TemplateToken.TIME,
                 TemplateToken.USER_MESSAGE,
                 TemplateToken.USER_NAME,
             ],
@@ -171,7 +173,7 @@ class TemplateStore:
         ),
         Templates.PROMPT_HISTORY_LINE: textwrap.dedent(
             """
-            {USER_NAME} says:
+            [{TIME}] {USER_NAME} says:
             {USER_MESSAGE}
 
             """

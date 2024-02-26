@@ -253,9 +253,9 @@ template:
   # history.  A list of these, one for each past chat message, will become {MESSAGE_HISTORY}
   # and inserted into the main prompt
   # .
-  # Allowed tokens: {USER_MESSAGE}, {USER_NAME}
+  # Allowed tokens: {TIME}, {USER_MESSAGE}, {USER_NAME}
   # .
-  #   default:  {USER_NAME} says: {USER_MESSAGE}
+  #   default:  [{TIME}] {USER_NAME} says: {USER_MESSAGE}
   prompt_history_line:
 
   # Part of the AI response-generation prompt, this is used to inform the AI that it is in

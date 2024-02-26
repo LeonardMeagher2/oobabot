@@ -4,6 +4,7 @@ Generate a prompt for the AI to respond to, given the
 message history and persona.
 """
 import typing
+import datetime
 
 from oobabot import fancy_logger
 from oobabot import persona
@@ -53,16 +54,6 @@ class PromptGenerator:
 
         self.persona = persona
         self.template_store = template_store
-
-        # this will be also used when sending message
-        # to suppress sending the prompt text to the user
-        self.bot_prompt_line = self.template_store.format(
-            templates.Templates.PROMPT_HISTORY_LINE,
-            {
-                templates.TemplateToken.USER_NAME: self.persona.ai_name,
-                templates.TemplateToken.USER_MESSAGE: "",
-            },
-        ).strip()
 
         self.image_request_made = self.template_store.format(
             templates.Templates.PROMPT_IMAGE_COMING,
@@ -138,10 +129,22 @@ class PromptGenerator:
         async for message in message_history:
             if not message.body_text:
                 continue
+            
+            absolute_time = datetime.datetime.fromtimestamp(message.send_timestamp)
+            relative_time = datetime.datetime.now() - absolute_time
+            if relative_time.days > 0:
+                relative_time = f"{relative_time.days} days ago"
+            elif relative_time.seconds > 3600:
+                relative_time = f"{relative_time.seconds // 3600} hours ago"
+            elif relative_time.seconds > 60:
+                relative_time = f"{relative_time.seconds // 60} minutes ago"
+            else:
+                relative_time = f"{relative_time.seconds} seconds ago"
 
             line = self.template_store.format(
                 templates.Templates.PROMPT_HISTORY_LINE,
                 {
+                    templates.TemplateToken.TIME: absolute_time.strftime("%d/%m/%Y %I:%M:%S %p") + " - " + relative_time,
                     templates.TemplateToken.USER_NAME: message.author_name,
                     templates.TemplateToken.USER_MESSAGE: message.body_text,
                 },
@@ -175,7 +178,14 @@ class PromptGenerator:
                 templates.TemplateToken.IMAGE_COMING: image_coming,
             },
         )
-        prompt += self.bot_prompt_line + "\n"
+        prompt += self.template_store.format(
+            templates.Templates.PROMPT_HISTORY_LINE,
+            {
+                templates.TemplateToken.TIME: datetime.datetime.now().strftime("%d/%m/%Y %I:%M:%S %p") + " - now",
+                templates.TemplateToken.USER_NAME: self.persona.ai_name,
+                templates.TemplateToken.USER_MESSAGE: "",
+            },
+        ).strip() + "\n"
         return prompt
 
     async def generate(

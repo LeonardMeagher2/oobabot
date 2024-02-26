@@ -134,7 +134,11 @@ class OobaClient(http_client.SerializedHttpClient):
 
     SERVICE_NAME = "Oobabooga"
 
-    OOBABOOGA_STREAMING_URI_PATH: str = "/api/v1/stream"
+    OOBABOOGA_STREAMING_URI_PATH: str = "/api/v1/stream" # WebSocket
+    OOBABOOGA_MEMORY_ADD_URI_PATH: str = "/api/v1/add" # POST method
+    OOBABOOGA_MEMORY_GET_URI_PATH: str = "/api/v1/get" # POST method
+    OOBABOOGA_MEMORY_DELETE_URI_PATH: str = "/api/v1/delete" # POST method
+    OOBABOOGA_MEMORY_CLEAR_URI_PATH: str = "/api/v1/clear" # DELETE method
 
     def __init__(
         self,
@@ -145,6 +149,8 @@ class OobaClient(http_client.SerializedHttpClient):
         self.message_regex = settings["message_regex"]
         self.request_params = settings["request_params"]
         self.log_all_the_things = settings["log_all_the_things"]
+
+        self.has_memory = False
 
         if self.message_regex:
             self.fn_new_splitter = lambda: RegexSplitter(self.message_regex)
@@ -168,6 +174,32 @@ class OobaClient(http_client.SerializedHttpClient):
             )
 
     async def _setup(self):
+        """
+        Called when the client is ready to start.
+        Used to test connection to the server.
+        """
+
+        # test memory
+        try:
+            # options endpoint test
+            async with self._get_session().options(self.OOBABOOGA_MEMORY_ADD_URI_PATH) as response:
+                if response.status != 200:
+                    fancy_logger.get().warning(
+                        "Oobabooga memory is not available"
+                    )
+                    self.has_memory = False
+                else:
+                    fancy_logger.get().debug(
+                        "Oobabooga memory is available"
+                    )
+                    self.has_memory = True
+
+        except aiohttp.ClientError:
+            fancy_logger.get().warning(
+                "Oobabooga memory is not available"
+            )
+            self.has_memory = False
+
         async with self._get_session().ws_connect(self.OOBABOOGA_STREAMING_URI_PATH):
             return
 
@@ -302,3 +334,103 @@ class OobaClient(http_client.SerializedHttpClient):
                         "WebSocket connection closed normally: %s", msg
                     )
                     return
+
+    async def add_memory(self, corpus: str, metadata:str, clear_before_adding: bool = False) -> None:
+        """
+        Add a memory to the Oobabooga memory.
+        """
+        if not self.has_memory:
+            return
+        
+
+        request = {
+            "corpus": corpus,
+            "clear_before_adding": clear_before_adding,
+            "metadata": metadata,
+        }
+
+        async with self._get_session().post(
+            self.OOBABOOGA_MEMORY_ADD_URI_PATH, json=request
+        ) as response:
+            if response.status != 200:
+                raise http_client.OobaHttpClientError(
+                    f"HTTP status {response.status} from {response.url}"
+                )
+            else:
+                fancy_logger.get().debug(
+                    "Added memory: %s", corpus
+                )
+    
+    async def get_memory(self, search_strings: list[str], n_results: int = 0, max_token_count:int = 0, sort_param: str = "distance") -> list[str]:
+        """
+        Get a memory from the Oobabooga memory.
+        """
+        if not self.has_memory:
+            return []
+
+        request = {
+            "search_strings": search_strings,
+        }
+        if n_results:
+            request["n_results"] = n_results
+
+        if max_token_count:
+            request["max_token_count"] = max_token_count
+        
+
+        async with self._get_session().post(
+            self.OOBABOOGA_MEMORY_GET_URI_PATH, json=request, params={"sort_param": sort_param}
+        ) as response:
+            if response.status != 200:
+                raise http_client.OobaHttpClientError(
+                    f"HTTP status {response.status} from {response.url}"
+                )
+            else:
+                result = await response.json()
+                fancy_logger.get().debug(
+                    "Got memory: %s", result
+                )
+
+                return result
+    
+    async def delete_memory(self, metadata: str) -> None:
+        """
+        Delete a memory from the Oobabooga memory.
+        """
+        if not self.has_memory:
+            return
+
+        request = {
+            "metadata": metadata,
+        }
+
+        async with self._get_session().post(
+            self.OOBABOOGA_MEMORY_DELETE_URI_PATH, json=request
+        ) as response:
+            if response.status != 200:
+                raise http_client.OobaHttpClientError(
+                    f"HTTP status {response.status} from {response.url}"
+                )
+            else:
+                fancy_logger.get().debug(
+                    "Deleted memory: %s", metadata
+                )
+
+    async def clear_memory(self) -> None:
+        """
+        Clear the Oobabooga memory.
+        """
+        if not self.has_memory:
+            return
+
+        async with self._get_session().delete(
+            self.OOBABOOGA_MEMORY_CLEAR_URI_PATH
+        ) as response:
+            if response.status != 200:
+                raise http_client.OobaHttpClientError(
+                    f"HTTP status {response.status} from {response.url}"
+                )
+            else:
+                fancy_logger.get().debug(
+                    "Cleared memory"
+                )
